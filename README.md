@@ -2,7 +2,11 @@
 
 Streamable HTTP backend for [`mcp-protocol`](https://github.com/egao1980/mcp-protocol). POST JSON-RPC; `Accept: text/event-stream` wraps the JSON body as an SSE `message` event. GET is 405 in wave-1.
 
-Client POSTs send `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`. Dual-era: modern `2026-07-28` and legacy `2025-11-25`.
+Client POSTs send `MCP-Protocol-Version`, `Mcp-Method`, and `Mcp-Name`.
+`Mcp-Name` is the tool/prompt name or resource URI for `tools/call` /
+`prompts/get` / `resources/read` (Node SDK v2 header cross-check). Legacy
+servers that return `Mcp-Session-Id` are echoed on later requests. Dual-era:
+modern `2026-07-28` and legacy `2025-11-25`. GET is 405 (spec-optional SSE).
 
 ```lisp
 (asdf:load-system "mcp-backend-streamable-http")

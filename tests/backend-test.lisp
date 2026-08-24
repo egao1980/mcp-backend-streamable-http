@@ -69,3 +69,22 @@
     (ok (typep client 'mcp-protocol:mcp-client))
     (ok (typep (mcp-protocol:mcp-client-transport client)
                'mcp-backend-streamable-http:streamable-http-rpc-transport))))
+
+(deftest mcp-name-from-params
+  (let ((tr (mcp-backend-streamable-http:make-streamable-http-rpc-transport
+             :url "http://127.0.0.1:9/mcp" :mcp-name "client")))
+    (let ((h (mcp-backend-streamable-http::%mcp-headers
+              tr "tools/call" (mcp-protocol:json-object "name" "echo"))))
+      (ok (equal "echo" (cdr (assoc "Mcp-Name" h :test #'string=)))))
+    (let ((h (mcp-backend-streamable-http::%mcp-headers
+              tr "resources/read" (mcp-protocol:json-object "uri" "memo://hi"))))
+      (ok (equal "memo://hi" (cdr (assoc "Mcp-Name" h :test #'string=)))))
+    (let ((h (mcp-backend-streamable-http::%mcp-headers tr "tools/list")))
+      (ok (equal "client" (cdr (assoc "Mcp-Name" h :test #'string=)))))))
+
+(deftest session-header-roundtrip
+  (let ((tr (mcp-backend-streamable-http:make-streamable-http-rpc-transport
+             :url "http://127.0.0.1:9/mcp")))
+    (setf (mcp-backend-streamable-http:transport-session-id tr) "sess-1")
+    (let ((h (mcp-backend-streamable-http::%mcp-headers tr "tools/list")))
+      (ok (equal "sess-1" (cdr (assoc "Mcp-Session-Id" h :test #'string=)))))))

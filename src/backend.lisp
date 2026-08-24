@@ -23,24 +23,155 @@
     (and (stringp accept)
          (search "text/event-stream" accept :test #'char-equal))))
 
-(defun make-mcp-app (server &key path)
-  "Clack app: POST JSON-RPC. Optional Accept: text/event-stream → SSE message event.
-   GET is 405 (wave-1). Required MCP headers are accepted but not required locally."
-  (let ((inner (rpc-backend-http:make-rpc-app
-                (lambda (method params)
-                  (mcp-protocol:dispatch-mcp-method server method params))
-                :path path)))
-    (lambda (env)
-      (let ((res (funcall inner env)))
-        (if (and (eql (first res) 200) (%wants-sse env))
+(defun %octets-to-string (octets)
+  (babel:octets-to-string octets :encoding :utf-8))
+
+(defun %slurp-stream (stream)
+  (if (and (open-stream-p stream)
+           (ignore-errors
+             (let ((et (stream-element-type stream)))
+               (and et (subtypep et 'character)))))
+      (with-output-to-string (out)
+        (loop for c = (read-char stream nil :eof)
+              until (eq c :eof)
+              do (write-char c out)))
+      (let ((bytes (make-array 0 :element-type '(unsigned-byte 8)
+                                  :adjustable t :fill-pointer 0)))
+        (loop for b = (read-byte stream nil :eof)
+              until (eq b :eof)
+              do (vector-push-extend b bytes))
+        (%octets-to-string bytes))))
+
+(defun slurp-env-body (env)
+  (let ((raw (getf env :raw-body)))
+    (cond
+      ((null raw) "")
+      ((stringp raw) raw)
+      ((and (vectorp raw) (not (stringp raw)))
+       (%octets-to-string raw))
+      ((streamp raw) (%slurp-stream raw))
+      (t (princ-to-string raw)))))
+
+(defun %origin-host (origin)
+  (when (and origin (stringp origin) (plusp (length origin)))
+    (let* ((after (or (search "://" origin) -3))
+           (rest (subseq origin (+ after 3)))
+           (slash (or (position #\/ rest) (length rest)))
+           (hostport (subseq rest 0 slash)))
+      (string-downcase hostport))))
+
+(defun %request-host (env)
+  (let ((host (or (%header env "host") (getf env :server-name))))
+    (when (and host (stringp host) (plusp (length host)))
+      (string-downcase host))))
+
+(defun %origin-allowed-p (env allowed-origins)
+  "Missing Origin is OK (non-browser). Present Origin MUST match allowlist or Host."
+  (let ((origin (%header env "origin")))
+    (cond
+      ((or (null origin) (and (stringp origin) (zerop (length origin)))) t)
+      (allowed-origins
+       (member origin allowed-origins :test #'string-equal))
+      (t
+       (let ((oh (%origin-host origin))
+             (hh (%request-host env)))
+         (or (null hh)
+             (and oh (or (string-equal oh hh)
+                         (string-equal oh (format nil "localhost:~a" (getf env :server-port)))
+                         (eql (search hh oh) 0)))))))))
+
+(defun %header-mismatch (id message)
+  (list 400
+        '(:content-type "application/json; charset=utf-8")
+        (list (rpc-protocol:encode-error-response
+               mcp-protocol:+mcp-error-header-mismatch+
+               message
+               :id id))))
+
+(defun %check-mcp-headers (env method params id)
+  "HeaderMismatch (-32020) / HTTP 400 when MCP-* disagrees with the JSON-RPC body."
+  (let ((h-ver (%header env "mcp-protocol-version"))
+        (h-method (%header env "mcp-method"))
+        (h-name (%header env "mcp-name"))
+        (b-ver (mcp-protocol:param (mcp-protocol:param params "_meta")
+                                   "io.modelcontextprotocol/protocolVersion"))
+        (b-name (or (mcp-protocol:param params "name")
+                    (mcp-protocol:param params "uri"))))
+    (cond
+      ((and h-ver b-ver (not (string-equal h-ver b-ver)))
+       (%header-mismatch id "MCP-Protocol-Version does not match _meta.protocolVersion"))
+      ((and h-method method (not (string-equal h-method method)))
+       (%header-mismatch id "Mcp-Method does not match JSON-RPC method"))
+      ((and h-name b-name (member method '("tools/call" "prompts/get" "resources/read")
+                                  :test #'string=)
+            (not (string-equal h-name b-name)))
+       (%header-mismatch id "Mcp-Name does not match tool/prompt name or resource URI"))
+      (t nil))))
+
+(defun make-mcp-app (server &key path allowed-origins)
+  "Clack app: POST JSON-RPC. Accept: text/event-stream → SSE message event.
+   GET is 405. Origin is validated (403). Header/body mismatch → -32020 / 400.
+   JSON-RPC notifications (no id) → 202 empty body."
+  (lambda (env)
+    (block app
+      (when (and path (not (string= (or (getf env :path-info) "/") path)))
+        (return-from app
+          '(404 (:content-type "text/plain") ("not found"))))
+      (unless (eq (getf env :request-method) :post)
+        (return-from app
+          '(405 (:content-type "text/plain" :allow "POST") ("POST only"))))
+      (unless (%origin-allowed-p env allowed-origins)
+        (return-from app
+          '(403 (:content-type "text/plain") ("forbidden origin"))))
+      (let* ((body (slurp-env-body env))
+             (msg (rpc-protocol:decode-message body))
+             (method (gethash "method" msg))
+             (params (or (gethash "params" msg) (mcp-protocol:json-object)))
+             (id-present (nth-value 1 (gethash "id" msg)))
+             (id (gethash "id" msg)))
+        (unless method
+          (return-from app
+            (list 400 '(:content-type "application/json; charset=utf-8")
+                  (list (rpc-protocol:encode-error-response
+                         rpc-protocol:+invalid-request+ "missing method" :id id)))))
+        (let ((mismatch (%check-mcp-headers env method params id)))
+          (when mismatch
+            (return-from app mismatch)))
+        (handler-case
+            (let ((result (mcp-protocol:dispatch-mcp-method server method params)))
+              (cond
+                ((not id-present)
+                 '(202 () ("")))
+                ((%wants-sse env)
+                 (list 200
+                       '(:content-type "text/event-stream; charset=utf-8"
+                         :cache-control "no-cache")
+                       (list (sse-protocol:encode-sse-event
+                              (sse-protocol:make-sse-event
+                               :event "message"
+                               :data (rpc-protocol:encode-response result :id id))))))
+                (t
+                 (list 200
+                       '(:content-type "application/json; charset=utf-8")
+                       (list (rpc-protocol:encode-response result :id id))))))
+          (rpc-protocol:rpc-error (c)
+            (list (if (eql (rpc-protocol:rpc-error-code c)
+                           mcp-protocol:+mcp-error-header-mismatch+)
+                      400
+                      200)
+                  '(:content-type "application/json; charset=utf-8")
+                  (list (rpc-protocol:encode-error-response
+                         (rpc-protocol:rpc-error-code c)
+                         (or (rpc-protocol:rpc-error-message c) "rpc error")
+                         :id id :data (rpc-protocol:rpc-error-data c)))))
+          (mcp-protocol:mcp-error (c)
             (list 200
-                  '(:content-type "text/event-stream; charset=utf-8"
-                    :cache-control "no-cache")
-                  (list (sse-protocol:encode-sse-event
-                         (sse-protocol:make-sse-event
-                          :event "message"
-                          :data (first (third res))))))
-            res)))))
+                  '(:content-type "application/json; charset=utf-8")
+                  (list (rpc-protocol:encode-error-response
+                         (or (mcp-protocol:mcp-error-code c)
+                             rpc-protocol:+internal-error+)
+                         (or (mcp-protocol:mcp-error-message c) "mcp error")
+                         :id id :data (mcp-protocol:mcp-error-data c)))))))))))
 
 (defun %ensure-http-server ()
   (or http-server-protocol:*http-server-backend*
@@ -66,9 +197,6 @@
                  :url url
                  :protocol-version protocol-version
                  :mcp-name mcp-name))
-
-(defun %octets-to-string (octets)
-  (babel:octets-to-string octets :encoding :utf-8))
 
 (defun %body-string (response)
   (let ((b (http-protocol:response-body response)))

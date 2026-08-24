@@ -3,8 +3,8 @@
   :description "Streamable HTTP transport backend for mcp-protocol (POST JSON / optional SSE)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("mcp-protocol" "rpc-backend-http" "sse-protocol" "http-protocol"
-               "http-server-protocol" "babel")
+  :depends-on ("mcp-protocol" "rpc-backend-http" "rpc-protocol-json"
+               "sse-protocol" "http-protocol" "http-server-protocol" "babel")
   :serial t
   :pathname "src"
   :components ((:file "package")

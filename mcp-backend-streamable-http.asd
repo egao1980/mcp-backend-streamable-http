@@ -1,5 +1,5 @@
 (defsystem "mcp-backend-streamable-http"
-  :version "0.1.0"
+  :version "0.1.1"
   :description "Streamable HTTP transport backend for mcp-protocol (POST JSON / optional SSE)"
   :author "egao1980"
   :license "MIT"

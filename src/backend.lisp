@@ -171,7 +171,7 @@
                          (or (mcp-protocol:mcp-error-code c)
                              rpc-protocol:+internal-error+)
                          (or (mcp-protocol:mcp-error-message c) "mcp error")
-                         :id id :data (mcp-protocol:mcp-error-data c)))))))))))
+                         :id id :data (mcp-protocol:mcp-error-data c))))))))))
 
 (defun %ensure-http-server ()
   (or http-server-protocol:*http-server-backend*

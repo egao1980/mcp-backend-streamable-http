@@ -12,7 +12,7 @@
   :in-order-to ((test-op (test-op "mcp-backend-streamable-http/tests"))))
 
 (defsystem "mcp-backend-streamable-http/tests"
-  :depends-on ("mcp-backend-streamable-http" "rove")
+  :depends-on ("mcp-backend-streamable-http" "rpc-protocol-json" "rove")
   :pathname "tests"
   :serial t
   :components ((:file "package")

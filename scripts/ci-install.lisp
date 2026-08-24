@@ -24,7 +24,9 @@
  (lambda ()
    (cl-repo:ensure-system-dependencies "mcp-backend-streamable-http"
      :also-tests t
-     :default-source :oci)))
+     :default-source :oci
+     :with '("dissect")
+     :sources '(("dissect" :ql)))))
 
 (format t "~&; ci: install phase done~%")
 (uiop:quit 0)

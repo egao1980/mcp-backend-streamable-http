@@ -1,9 +1,10 @@
 (defsystem "mcp-backend-streamable-http"
   :version "0.1.0"
-  :description "Streamable HTTP transport backend for mcp-protocol"
+  :description "Streamable HTTP transport backend for mcp-protocol (POST JSON / optional SSE)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("mcp-protocol" "rpc-protocol" "sse-protocol" "http-server-protocol")
+  :depends-on ("mcp-protocol" "rpc-backend-http" "sse-protocol" "http-protocol"
+               "http-server-protocol" "babel")
   :serial t
   :pathname "src"
   :components ((:file "package")

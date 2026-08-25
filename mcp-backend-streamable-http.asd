@@ -6,6 +6,7 @@
   :depends-on ((:version "mcp-protocol" "0.2.0")
                "rpc-backend-http" "rpc-protocol-json"
                "sse-protocol" "http-protocol" "http-server-protocol" "babel")
+  :properties (:cl-repo (:ci (:with ("dissect") :sources (("dissect" :ql)))))
   :serial t
   :pathname "src"
   :components ((:file "package")

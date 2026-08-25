@@ -1,10 +1,11 @@
 (defsystem "mcp-backend-streamable-http"
-  :version "0.1.1"
+  :version "0.2.0"
   :description "Streamable HTTP transport backend for mcp-protocol (POST JSON / optional SSE)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("mcp-protocol" "rpc-backend-http" "sse-protocol" "http-protocol"
-               "http-server-protocol" "babel")
+  :depends-on ((:version "mcp-protocol" "0.2.0")
+               "rpc-backend-http" "rpc-protocol-json"
+               "sse-protocol" "http-protocol" "http-server-protocol" "babel")
   :serial t
   :pathname "src"
   :components ((:file "package")
@@ -12,7 +13,7 @@
   :in-order-to ((test-op (test-op "mcp-backend-streamable-http/tests"))))
 
 (defsystem "mcp-backend-streamable-http/tests"
-  :depends-on ("mcp-backend-streamable-http" "rove")
+  :depends-on ("mcp-backend-streamable-http" "rpc-protocol-json" "rove")
   :pathname "tests"
   :serial t
   :components ((:file "package")

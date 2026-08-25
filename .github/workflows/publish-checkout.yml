@@ -1,46 +1,25 @@
-name: Publish checkout to cl-systems
+name: Publish checkout
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "OCI tag (default: .asd :version)"
+        description: "OCI tag (empty → .asd :version)"
         required: false
         default: ""
+        type: string
       packager_version:
-        description: "cl-repository-packager OCI tag (default: latest anchor)"
+        description: "Packager image version"
         required: false
-        default: "latest"
-
-env:
-  SBCL_VERSION: 2.6.7
-  ROSWELL_VERSION: "26.02.116"
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        default: "0.16.0"
+        type: string
 
 jobs:
   publish:
-    strategy:
-      fail-fast: false
-      matrix:
-        system: [mcp-backend-streamable-http]
-    runs-on: ubuntu-latest
+    uses: egao1980/cl-repository/.github/workflows/publish-source.yml@main
+    with:
+      version: ${{ inputs.version }}
+      packager-version: ${{ inputs.packager_version }}
     permissions:
       contents: read
       packages: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: egao1980/cl-repository/.github/actions/setup-client@main
-
-      - uses: egao1980/cl-repository/.github/actions/setup-roswell@main
-        with:
-          sbcl-version: ${{ env.SBCL_VERSION }}
-          roswell-version: ${{ env.ROSWELL_VERSION }}
-
-      - name: Publish ${{ matrix.system }}
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          PKG_SYSTEM: ${{ matrix.system }}
-          PKG_VERSION: ${{ inputs.version }}
-          PACKAGER_VERSION: ${{ inputs.packager_version }}
-        run: ros -l scripts/publish-checkout.lisp -q

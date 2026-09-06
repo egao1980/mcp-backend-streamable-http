@@ -11,7 +11,7 @@ on:
       packager_version:
         description: "Packager image version"
         required: false
-        default: "0.16.0"
+        default: "latest"
         type: string
 
 jobs:

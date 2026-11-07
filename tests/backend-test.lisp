@@ -168,3 +168,52 @@
       (ok (eql 200 (first res)))
       (ok (eql rpc-protocol:+invalid-params+
                (gethash "code" (gethash "error" msg)))))))
+
+(defun %call-headers (accept)
+  (let ((h (make-hash-table :test 'equal)))
+    (setf (gethash "accept" h) accept
+          (gethash "mcp-protocol-version" h) "2025-11-25"
+          (gethash "mcp-method" h) "tools/call"
+          (gethash "mcp-name" h) "work")
+    h))
+
+(defun %progress-server ()
+  (let ((server (make-instance 'mcp-protocol:mcp-server :name "http-fix" :version "0.1.0")))
+    (mcp-protocol:register-tool
+     server
+     (mcp-protocol:make-mcp-tool
+      "work" :input-schema (mcp-protocol:json-object "type" "object")
+      :handler (lambda (args)
+                 (declare (ignore args))
+                 (mcp-protocol:send-progress server 1 :total 2)
+                 "ok")))
+    server))
+
+(defun %call-body ()
+  (rpc-protocol:encode-request
+   "tools/call"
+   (mcp-protocol:json-object "name" "work" "arguments" (mcp-protocol:json-object)
+                             "_meta" (mcp-protocol:json-object "progressToken" "p1"))
+   :id 5))
+
+(deftest sse-response-carries-request-notifications
+  (let* ((app (mcp-backend-streamable-http:make-mcp-app (%progress-server)))
+         (res (funcall app (list :request-method :post :path-info "/"
+                                 :raw-body (%call-body)
+                                 :headers (%call-headers "application/json, text/event-stream"))))
+         (events (mapcar (lambda (chunk)
+                           (rpc-protocol:decode-message
+                            (sse-protocol:sse-event-data (sse-protocol:decode-sse-block chunk))))
+                         (third res))))
+    (ok (= 2 (length events)))
+    (ok (equal "notifications/progress" (gethash "method" (first events))))
+    (ok (equal "p1" (gethash "progressToken" (gethash "params" (first events)))))
+    (ok (= 5 (gethash "id" (second events))))))
+
+(deftest json-response-drops-notifications
+  (let* ((app (mcp-backend-streamable-http:make-mcp-app (%progress-server)))
+         (res (funcall app (list :request-method :post :path-info "/"
+                                 :raw-body (%call-body)
+                                 :headers (%call-headers "application/json")))))
+    (ok (= 1 (length (third res))))
+    (ok (= 5 (gethash "id" (rpc-protocol:decode-message (first (third res))))))))

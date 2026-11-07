@@ -111,7 +111,9 @@
 (defun make-mcp-app (server &key path allowed-origins)
   "Clack app: POST JSON-RPC. Accept: text/event-stream → SSE message event.
    GET is 405. Origin is validated (403). Header/body mismatch → -32020 / 400.
-   JSON-RPC notifications (no id) → 202 empty body."
+   JSON-RPC notifications (no id) → 202 empty body. Server notifications sent while a
+   request is handled (progress, log) precede the response as SSE message events; with
+   a plain JSON response they are dropped."
   (lambda (env)
     (block app
       (when (and path (not (string= (or (getf env :path-info) "/") path)))
@@ -138,18 +140,26 @@
           (when mismatch
             (return-from app mismatch)))
         (handler-case
-            (let ((result (mcp-protocol:dispatch-mcp-method server method params)))
+            (let* ((sse (%wants-sse env))
+                   (notes '())
+                   (result (let ((mcp-protocol:*mcp-notifier*
+                                   (lambda (note-method note-params)
+                                     (when sse
+                                       (push (rpc-protocol:encode-notification note-method note-params)
+                                             notes)))))
+                             (mcp-protocol:dispatch-mcp-method server method params))))
               (cond
                 ((not id-present)
                  '(202 () ("")))
-                ((%wants-sse env)
+                (sse
                  (list 200
                        '(:content-type "text/event-stream; charset=utf-8"
                          :cache-control "no-cache")
-                       (list (sse-protocol:encode-sse-event
-                              (sse-protocol:make-sse-event
-                               :event "message"
-                               :data (rpc-protocol:encode-response result :id id))))))
+                       (mapcar (lambda (data)
+                                 (sse-protocol:encode-sse-event
+                                  (sse-protocol:make-sse-event :event "message" :data data)))
+                               (append (reverse notes)
+                                       (list (rpc-protocol:encode-response result :id id))))))
                 (t
                  (list 200
                        '(:content-type "application/json; charset=utf-8")

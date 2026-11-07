@@ -1,9 +1,9 @@
 (defsystem "mcp-backend-streamable-http"
-  :version "0.2.0"
+  :version "0.3.0"
   :description "Streamable HTTP transport backend for mcp-protocol (POST JSON / optional SSE)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ((:version "mcp-protocol" "0.2.0")
+  :depends-on ((:version "mcp-protocol" "0.3.0")
                "rpc-backend-http" "rpc-protocol-json"
                "sse-protocol" "http-protocol" "http-server-protocol" "babel")
   :properties (:cl-repo (:ci (:with ("dissect"))))

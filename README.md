@@ -13,6 +13,7 @@ Server MUST-gaps:
 - `Origin` present and not allowed → **403**. `:allowed-origins` on `make-mcp-app`; default matches `Host`.
 - Header/body mismatch → JSON-RPC **`-32020` HeaderMismatch**, HTTP **400**.
 - Notification POST (no JSON-RPC `id`) → **202** empty body.
+- Server notifications sent while a request runs (`send-progress`, `mcp-log`) come before the response as SSE `message` events when the client accepts `text/event-stream`. With a JSON response they are dropped. There is no GET stream, so notifications outside a request (resource updates) are not delivered over HTTP.
 
 ```lisp
 (asdf:load-system "mcp-backend-streamable-http")
